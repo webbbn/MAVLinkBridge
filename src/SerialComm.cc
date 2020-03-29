@@ -48,11 +48,12 @@
 #endif
 
 //-----------------------------------------------------------------------------
-SerialComm::SerialComm(bool raw)
+SerialComm::SerialComm(bool raw, bool verbose)
     : CommLink(raw)
     , _fd(-1)
     , _baudrate(57600)
     , _status(SERIAL_PORT_CLOSED)
+    , _verbose(verbose)
 {
 
 }
@@ -162,6 +163,10 @@ SerialComm::run()
                     mavlink_message_t* discard = _inMessages.front();
                     free(discard);
                     _inMessages.pop();
+                }
+                if (_verbose) {
+                    printf("(SER) msgid: %d  len: %d  sysid: %d  compid: %d\n",
+                           message->msgid, message->len, message->sysid, message->compid);
                 }
                 _inMessages.push(message);
                 message = NULL;

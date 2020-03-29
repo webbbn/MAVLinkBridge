@@ -45,9 +45,9 @@
 class UDPComm : public CommLink
 {
 public:
-    UDPComm(bool raw, bool switchToUnicast);
+    UDPComm(bool raw, bool switchToUnicast, bool verbose);
     ~UDPComm();
-    bool            init        (std::string address);
+    bool            init        (std::string address, std::string laddress);
     bool            open        ();
     void            close       ();
     void            write       (mavlink_message_t& message);
@@ -57,6 +57,7 @@ public:
 private:
     bool            _sendTo     (void *buffer, int len);
     bool            _setTargetAddress (const std::string& host, uint16_t port);
+    bool            _setSourceAddress (const std::string& host, uint16_t port);
     bool            _readOne    (uint8_t& c);
     int             _read       (void* buffer, int len);
     int             _readSelect (uint32_t timeout);
@@ -66,8 +67,10 @@ private:
 private:
     SOCKET              _socket;
     struct sockaddr_in  _targetAddress;
+    struct sockaddr_in  _sourceAddress;
     bool                _valid;
     bool                _switchToUnicast;
+    bool                _verbose;
     uint8_t             _inBuffer[128];
     uint8_t             _inBufferIndex;
     uint8_t             _inBufferCount;

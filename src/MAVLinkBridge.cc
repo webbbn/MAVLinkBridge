@@ -93,6 +93,10 @@ int MAVLinkBridge::run(int argc, char *argv[])
         _usage(argv[0]);
         return 0;
     }
+    bool verbose = false;
+    if(input.exists("-v")) {
+        verbose = true;
+    }
     if(input.exists("-r")) {
         _rawMode = true;
     }
@@ -101,7 +105,13 @@ int MAVLinkBridge::run(int argc, char *argv[])
     }
     const std::string &udpString = input.getOption("-u");
     if (udpString.empty()){
-        fprintf(stderr, "Missing UDP argument\n");
+        fprintf(stderr, "Missing target UDP argument\n");
+        _usage(argv[0]);
+        return 0;
+    }
+    const std::string &localUdpString = input.getOption("-l");
+    if (localUdpString.empty()){
+        fprintf(stderr, "Missing local UDP argument\n");
         _usage(argv[0]);
         return 0;
     }
@@ -111,10 +121,10 @@ int MAVLinkBridge::run(int argc, char *argv[])
         _usage(argv[0]);
         return 0;
     }
-    _serialComm = new SerialComm(_rawMode);
+    _serialComm = new SerialComm(_rawMode, verbose);
     if(_serialComm->init(serialString) && _serialComm->open()) {
-        _udpComm = new UDPComm(_rawMode, switchToMulticast);
-        if(_udpComm->init(udpString) && _udpComm->open()) {
+        _udpComm = new UDPComm(_rawMode, switchToMulticast, verbose);
+        if(_udpComm->init(udpString, localUdpString) && _udpComm->open()) {
             _running = true;
             _serialComm->startThread();
             _udpComm->startThread();
@@ -134,9 +144,11 @@ MAVLinkBridge::_usage(const char* app)
     fprintf(stderr, "Usage:\n");
     fprintf(stderr, "%s [options] -s serial_port[:baud] -u target_address[:port]\n", app);
     fprintf(stderr, "\nOptions:\n");
+    fprintf(stderr, "-v          Verbose logging to stdout\n");
     fprintf(stderr, "-r          Raw mode (don't break into mavlink message chunks)\n");
     fprintf(stderr, "-s name     Serial port name (and optionally the baud rate)\n");
-    fprintf(stderr, "-u address  IP address or host name (and optionally the port number)\n");
+    fprintf(stderr, "-u address  IP address or host name (and optionally the port number) to send to\n");
+    fprintf(stderr, "-l address  IP address or host name (and optionally the port number) to receive on\n");
     fprintf(stderr, "-w          Switch to unicast mode once a response is received\n");
     fprintf(stderr, "\nExample:\n");
     fprintf(stderr, "\n  %s -s /dev/tty.usbmodem1:115200 -u 192.168.1.255 -r -w\n", app);

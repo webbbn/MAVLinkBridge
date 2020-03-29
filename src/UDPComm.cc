@@ -38,13 +38,14 @@
 #include "UDPComm.h"
 
 //-----------------------------------------------------------------------------
-UDPComm::UDPComm(bool raw, bool switchToUnicast)
+UDPComm::UDPComm(bool raw, bool switchToUnicast, bool verbose)
     : CommLink(raw)
     , _socket(-1)
     , _valid(false)
     , _switchToUnicast(switchToUnicast)
     , _inBufferIndex(0)
     , _inBufferCount(0)
+    , _verbose(verbose)
 {
 }
 
@@ -76,7 +77,7 @@ UDPComm::write(std::vector<uint8_t> data)
 
 //-----------------------------------------------------------------------------
 bool
-UDPComm::init(std::string address)
+UDPComm::init(std::string address, std::string laddress)
 {
     uint16_t port = MVB_UDP_TARGET_PORT;
     std::string caddress = address;
@@ -87,6 +88,17 @@ UDPComm::init(std::string address)
     }
     if(!_setTargetAddress(caddress, port)) {
         fprintf(stderr, "UDP: Address not found: %s\n", address.c_str());
+        return false;
+    }
+    port = MVB_UDP_LOCAL_PORT;
+    caddress = laddress;
+    idx = laddress.find(':');
+    if(idx > 0) {
+        caddress = laddress.substr(0, idx);
+        port = atoi(laddress.substr(idx + 1).c_str());
+    }
+    if(!_setSourceAddress(caddress, port)) {
+        fprintf(stderr, "UDP: Address not found: %s\n", laddress.c_str());
         return false;
     }
     _socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -159,6 +171,10 @@ UDPComm::run()
                     mavlink_message_t* discard = _inMessages.front();
                     free(discard);
                     _inMessages.pop();
+                }
+                if (_verbose) {
+                    printf("(UDP) msgid: %d  len: %d  sysid: %d  compid: %d\n",
+                           message->msgid, message->len, message->sysid, message->compid);
                 }
                 _inMessages.push(message);
                 message = NULL;
@@ -240,6 +256,42 @@ UDPComm::_setTargetAddress(const std::string& host, uint16_t port)
     _targetAddress.sin_family = AF_INET;
     _targetAddress.sin_addr.s_addr = address;
     _targetAddress.sin_port = htons(port);
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+bool
+UDPComm::_setSourceAddress(const std::string& host, uint16_t port)
+{
+    if(host.size() > 255 || !host.size()) {
+        return false;
+    }
+    struct hostent* hp;
+    struct in_addr** bptr;
+    in_addr_t address;
+    if(host[0] >= '0' && host[0] <= '9') {
+        address = inet_addr(host.c_str());
+    } else {
+#ifdef __GLIBC__
+        char   hbuf[8192];
+        struct hostent hb;
+        int    rtn;
+        if(gethostbyname_r(host.c_str(), &hb, hbuf, sizeof(hbuf), &hp, &rtn)) {
+            hp = NULL;
+        }
+#else
+        hp = gethostbyname(host.c_str());
+#endif
+        if(!hp) {
+            return false;
+        }
+        bptr = (struct in_addr**)hp->h_addr_list;
+        address = (**bptr).s_addr;
+    }
+    memset(&_sourceAddress, 0, sizeof(struct sockaddr_in));
+    _sourceAddress.sin_family = AF_INET;
+    _sourceAddress.sin_addr.s_addr = address;
+    _sourceAddress.sin_port = htons(port);
     return true;
 }
 
@@ -340,12 +392,7 @@ UDPComm::_readMessage(mavlink_message_t& message)
 bool
 UDPComm::_bind()
 {
-    struct sockaddr_in addr;
-    memset((void*)&addr, 0, sizeof(addr));
-    addr.sin_family         = AF_INET;
-    addr.sin_addr.s_addr    = INADDR_ANY;
-    addr.sin_port           = htons(MVB_UDP_LOCAL_PORT);
-    if(bind(_socket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    if(bind(_socket, (struct sockaddr*)&_sourceAddress, sizeof(_sourceAddress)) < 0) {
         perror("UDP");
         return false;
     }

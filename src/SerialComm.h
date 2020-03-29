@@ -46,7 +46,7 @@ class Serial_Port;
 class SerialComm : public CommLink
 {
 public:
-    SerialComm(bool raw);
+    SerialComm(bool raw, bool verbose);
     ~SerialComm();
     enum {
         // Status flags
@@ -72,6 +72,7 @@ private:
     int         _status;
     std::string     _uart_name;
     struct termios  _savedtio;
+    bool        _verbose;
 };
 
 #endif // SERIALCOMM_H
