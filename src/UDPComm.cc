@@ -40,7 +40,8 @@
 //-----------------------------------------------------------------------------
 UDPComm::UDPComm(bool raw, bool switchToUnicast, bool verbose)
     : CommLink(raw)
-    , _socket(-1)
+    , _ssocket(-1)
+    , _rsocket(-1)
     , _valid(false)
     , _switchToUnicast(switchToUnicast)
     , _inBufferIndex(0)
@@ -101,20 +102,25 @@ UDPComm::init(std::string address, std::string laddress)
         fprintf(stderr, "UDP: Address not found: %s\n", laddress.c_str());
         return false;
     }
-    _socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if(_socket < 0) {
+    _ssocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if(_ssocket < 0) {
         fprintf(stderr, "UDP: Error creating socket.\n");
         _valid = false;
     } else {
         _valid = true;
         int i = 1; //-- Allow broadcasting
-        setsockopt(_socket, SOL_SOCKET, SO_BROADCAST, SOCKOPTVAL & i, sizeof(i));
+        setsockopt(_ssocket, SOL_SOCKET, SO_BROADCAST, SOCKOPTVAL & i, sizeof(i));
 #if defined(__APPLE__)
         int s = 1;  //-- Do Not generate SIGPIPE on closed socket
-        setsockopt(_socket, SOL_SOCKET, SO_NOSIGPIPE, SOCKOPTVAL & s, sizeof(s));
+        setsockopt(_ssocket, SOL_SOCKET, SO_NOSIGPIPE, SOCKOPTVAL & s, sizeof(s));
 #endif
         unsigned long b = 1; // Don't Block
-        ioctl(_socket, FIONBIO, &b);
+        ioctl(_ssocket, FIONBIO, &b);
+    }
+    _rsocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if(_rsocket < 0) {
+        fprintf(stderr, "UDP: Error creating socket.\n");
+        _valid = false;
     }
     return _valid;
 }
@@ -133,10 +139,15 @@ UDPComm::open()
 void
 UDPComm::close()
 {
-    if(_socket >= 0) {
-        shutdown(_socket, 1);
-        ::close(_socket);
-        _socket = -1;
+    if(_ssocket >= 0) {
+        shutdown(_ssocket, 1);
+        ::close(_ssocket);
+        _ssocket = -1;
+    }
+    if(_rsocket >= 0) {
+        shutdown(_rsocket, 1);
+        ::close(_rsocket);
+        _rsocket = -1;
     }
     _valid = false;
     join();
@@ -200,7 +211,7 @@ UDPComm::_sendTo(void* buffer, int len)
     int total = 0;
     int left = len;
     do {
-        int written = ::sendto(_socket, (IOTYPE)ptr, left, 0, (struct sockaddr*)&_targetAddress, sizeof(_targetAddress));
+        int written = ::sendto(_ssocket, (IOTYPE)ptr, left, 0, (struct sockaddr*)&_targetAddress, sizeof(_targetAddress));
         if(written < 0) {
             int error = GIOERRNO;
             if (error == GEAGAIN) {
@@ -318,7 +329,7 @@ UDPComm::_read(void* buffer, int len)
     memset((void*)&sockc, 0, sizeof(sockc));
     socklen_t rlen = sizeof(sockc);
     while(true) {
-        int count = ::recvfrom(_socket, (IOTYPE)buffer, len, 0, (struct sockaddr*)&sockc, &rlen);
+        int count = ::recvfrom(_rsocket, (IOTYPE)buffer, len, 0, (struct sockaddr*)&sockc, &rlen);
         if(count == 0) {
             return 0;
         }
@@ -354,7 +365,7 @@ UDPComm::_readSelect(uint32_t timeout)
     tout.tv_sec  = timeout / 1000;
     tout.tv_usec = (timeout % 1000) * 1000;
     FD_ZERO(&set);
-    FD_SET(_socket, &set);
+    FD_SET(_rsocket, &set);
     return select(1, &set, 0, 0, &tout);
 }
 
@@ -364,8 +375,8 @@ UDPComm::_writeSelect()
 {
     fd_set set;
     FD_ZERO(&set);
-    FD_SET(_socket, &set);
-    int ret = select(_socket + 1, 0, &set, 0, 0);
+    FD_SET(_ssocket, &set);
+    int ret = select(_ssocket + 1, 0, &set, 0, 0);
     if (ret < 0) {
         return 0;
     }
@@ -392,7 +403,7 @@ UDPComm::_readMessage(mavlink_message_t& message)
 bool
 UDPComm::_bind()
 {
-    if(bind(_socket, (struct sockaddr*)&_sourceAddress, sizeof(_sourceAddress)) < 0) {
+    if(bind(_rsocket, (struct sockaddr*)&_sourceAddress, sizeof(_sourceAddress)) < 0) {
         perror("UDP");
         return false;
     }

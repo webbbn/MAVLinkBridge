@@ -65,7 +65,8 @@ private:
     bool            _readMessage(mavlink_message_t& message);
     bool            _bind       ();
 private:
-    SOCKET              _socket;
+    SOCKET              _ssocket;
+    SOCKET              _rsocket;
     struct sockaddr_in  _targetAddress;
     struct sockaddr_in  _sourceAddress;
     bool                _valid;
